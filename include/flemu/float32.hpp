@@ -2,6 +2,7 @@
 #define FLEMU_FLOATING_HPP
 
 #include "utility.hpp"
+#include "bit_proxy.hpp"
 
 #include <boost/ut.hpp>
 
