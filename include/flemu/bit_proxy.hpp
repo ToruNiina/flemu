@@ -40,7 +40,7 @@ struct bit_proxy
 
     constexpr explicit operator base_type() const
     {
-        const auto x = (*base_);
+        const base_type x = (*base_);
         return (x & mask<base_type>(stop_, start_)) >> start_;
     }
 
@@ -51,6 +51,15 @@ struct bit_proxy
     constexpr auto operator<=>(const base_type& other) const
     {
         return other <=> base_type(*this);
+    }
+
+    constexpr auto operator==(const bit_proxy& other) const
+    {
+        return base_type(other) == base_type(*this);
+    }
+    constexpr auto operator<=>(const bit_proxy& other) const
+    {
+        return base_type(other) <=> base_type(*this);
     }
 
     constexpr std::size_t start() const noexcept {return start_;}
@@ -102,6 +111,15 @@ struct const_bit_proxy
     constexpr auto operator<=>(const base_type& other) const
     {
         return other <=> base_type(*this);
+    }
+
+    constexpr auto operator==(const const_bit_proxy& other) const
+    {
+        return base_type(other) == base_type(*this);
+    }
+    constexpr auto operator<=>(const const_bit_proxy& other) const
+    {
+        return base_type(other) <=> base_type(*this);
     }
 
     constexpr std::size_t start() const noexcept {return start_;}
