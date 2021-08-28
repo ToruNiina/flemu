@@ -31,6 +31,35 @@ constexpr UInt mask(const std::size_t x, const std::size_t y) noexcept
     }
 }
 
+template<std::unsigned_integral UInt>
+constexpr int bit_at(const UInt x, const std::size_t i) noexcept
+{
+    if (i < 8 * sizeof(UInt))
+    {
+        return (x & mask<UInt>(i, i)) == 0 ? 0 : 1;
+    }
+    else
+    {
+        return 0;
+    }
+}
+
+template<std::unsigned_integral UInt>
+std::string as_bit(const UInt x) noexcept
+{
+    std::string str;
+    const auto width = sizeof(UInt)*8;
+    for(std::size_t i=0; i<width; ++i)
+    {
+        if(i % 4 == 0 && i != 0)
+        {
+            str += '\'';
+        }
+        str += bit_at(x, width-i-1) + '0';
+    }
+    return str;
+}
+
 #ifdef FLEMU_ACTIVATE_UNIT_TESTS
 inline boost::ut::suite tests_utility = [] {
     using namespace boost::ut::literals;
