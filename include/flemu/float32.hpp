@@ -43,8 +43,16 @@ struct basic_float32
     constexpr proxy_type exponent() noexcept {return bit_proxy(value_, 30, Mantissa);}
     constexpr proxy_type mantissa() noexcept {return bit_proxy(value_, Mantissa-1, 0);}
 
-    constexpr std::uint32_t bias()  const noexcept {return Bias;}
+    constexpr bool is_nan() const noexcept
+    {
+        return this->exponent() == 0b1111'1111 && this->mantissa() != 0;
+    }
+    constexpr bool is_inf() const noexcept
+    {
+        return this->exponent() == 0b1111'1111 && this->mantissa() == 0;
+    }
 
+    constexpr std::uint32_t bias()  const noexcept {return Bias;}
     constexpr std::uint32_t base() const noexcept {return value_;}
 
   private:
