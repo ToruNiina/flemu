@@ -55,11 +55,11 @@ struct bit_proxy
 
     constexpr auto operator==(const bit_proxy& other) const
     {
-        return base_type(other) == base_type(*this);
+        return base_type(*this) == base_type(other);
     }
     constexpr auto operator<=>(const bit_proxy& other) const
     {
-        return base_type(other) <=> base_type(*this);
+        return base_type(*this) <=> base_type(other);
     }
 
     constexpr std::size_t start() const noexcept {return start_;}
@@ -115,11 +115,11 @@ struct const_bit_proxy
 
     constexpr auto operator==(const const_bit_proxy& other) const
     {
-        return base_type(other) == base_type(*this);
+        return base_type(*this) == base_type(other);
     }
     constexpr auto operator<=>(const const_bit_proxy& other) const
     {
-        return base_type(other) <=> base_type(*this);
+        return base_type(*this) <=> base_type(other);
     }
 
     constexpr std::size_t start() const noexcept {return start_;}
@@ -147,7 +147,7 @@ inline boost::ut::suite tests_bit_proxy = []
 {
     using namespace boost::ut::literals;
 
-    "bit_proxy"_test = []
+    "bit_proxy_substitution"_test = []
     {
         std::uint32_t u32 = 0x00FF'0F0F;
         bit_proxy proxy1(u32, 15, 0);
@@ -182,6 +182,18 @@ inline boost::ut::suite tests_bit_proxy = []
 
         bit_proxy proxy4(u32, 31, 31);
         boost::ut::expect(proxy4 == 1);
+    };
+
+    "bit_proxy_comparison"_test = []
+    {
+        std::uint32_t u32 = 0x00FF'0F0F;
+        bit_proxy proxy1(u32, 15,  0); // 0F0F
+        bit_proxy proxy2(u32, 23,  8); // FF0F
+        bit_proxy proxy3(u32, 31, 16); // 00FF
+
+        boost::ut::expect(proxy1 < proxy2);
+        boost::ut::expect(proxy1 > proxy3);
+        boost::ut::expect(proxy2 > proxy3);
     };
 };
 #endif
