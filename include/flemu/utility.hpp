@@ -4,6 +4,8 @@
 
 #include <cmath>
 #include <cstdint>
+#include <cstring>
+
 #include <concepts>
 
 namespace flemu
@@ -58,6 +60,18 @@ std::string as_bit(const UInt x) noexcept
         str += bit_at(x, width-i-1) + '0';
     }
     return str;
+}
+
+// only g++11 supports std::bit_cast ...
+template<typename T, typename U>
+T bit_cast(const U& u)
+{
+    static_assert(sizeof(T) == sizeof(U));
+    T t;
+    std::memcpy(reinterpret_cast<char*>(std::addressof(t)),
+                reinterpret_cast<const char*>(std::addressof(u)),
+                sizeof(T));
+    return t;
 }
 
 #ifdef FLEMU_ACTIVATE_UNIT_TESTS
