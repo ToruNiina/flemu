@@ -18,14 +18,9 @@ inline float32 add(const float32& x_, const float32& y_) noexcept
     // always make x <= y
     const auto [x, y] = [&]
     {
-        const std::uint32_t xexp(x_.exponent());
-        const std::uint32_t xman(x_.mantissa());
-        const std::uint32_t yexp(y_.exponent());
-        const std::uint32_t yman(y_.mantissa());
-
-        if(xexp == yexp)
+        if(x_.exponent() == y_.exponent())
         {
-            if(xman < yman)
+            if(x_.mantissa() < y_.mantissa())
             {
                 return std::make_pair(x_, y_);
             }
@@ -36,7 +31,7 @@ inline float32 add(const float32& x_, const float32& y_) noexcept
         }
         else
         {
-            if(xexp < yexp)
+            if(x_.exponent() < y_.exponent())
             {
                 return std::make_pair(x_, y_);
             }
