@@ -346,10 +346,10 @@ inline boost::ut::suite tests_adder = []
         const std::size_t N = 10000;
         for(std::size_t i=0; i<N; ++i)
         {
-//             const std::uint32_t xi = (sgn(rng) << 31) + (exp(rng) << 23) + man(rng);
-//             const std::uint32_t yi = (sgn(rng) << 31) + (exp(rng) << 23) + man(rng);
-            const std::uint32_t xi = (1 << 31) + (exp(rng) << 23) + man(rng);
-            const std::uint32_t yi = (1 << 31) + (exp(rng) << 23) + man(rng);
+            const std::uint32_t xi = (sgn(rng) << 31) + (exp(rng) << 23) + man(rng);
+            const std::uint32_t yi = (sgn(rng) << 31) + (exp(rng) << 23) + man(rng);
+//             const std::uint32_t xi = (0 << 31) + (exp(rng) << 23) + man(rng);
+//             const std::uint32_t yi = (0 << 31) + (exp(rng) << 23) + man(rng);
 //             const std::uint32_t xi = 0b1101'1100'0000'1001'0010'1110'0100'0000;
 //             const std::uint32_t yi = 0b1101'1010'0011'0100'0101'1100'0010'1001;
 //             const std::uint32_t xi = 0b1100'1101'1111'1110'1111'1100'1100'1101;
