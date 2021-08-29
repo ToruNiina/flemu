@@ -195,9 +195,23 @@ inline float32 add(const float32& x_, const float32& y_) noexcept
             while(bit_at(res, 26) == 0)
             {
                 exp  -= 1;
+                if(exp == 0)
+                {
+                    // since it becomes denormalized number, we don't need to
+                    // normalize it.
+                    break;
+                }
                 res <<= 1;
+            }
 
-                // TODO FIXME consider the case when it becomes dernomalized number
+            if(exp == 0)
+            {
+                // if it is 0.111...111, then it will be 1.00 after rounding and
+                // will become normalized.
+                if((res & mask<std::uint32_t>(25, 2)) >> 2 == (1<<24)-1)
+                {
+                    return std::make_tuple(sgn, std::uint32_t(1), std::uint32_t(0));
+                }
             }
 
             // consider nearest-even rounding only
@@ -205,8 +219,9 @@ inline float32 add(const float32& x_, const float32& y_) noexcept
             {
                 if(bit_at(res, 1) == 0 && bit_at(res, 0) == 0) // to even
                 {
-                    if(bit_at(res, 3) == 0) // already even. do nothing.
+                    if(bit_at(res, 3) == 0)
                     {
+                        // already even. do nothing.
                     }
                     else // its odd.
                     {
@@ -226,7 +241,7 @@ inline float32 add(const float32& x_, const float32& y_) noexcept
                 exp  += 1;
                 res >>= 1;
             }
-            assert(bit_at(res, 26) == 1); // normalized?
+            assert(bit_at(res, 26) == 1 || exp == 0); // normalized?
 
             if(exp == 0b1111'1111)
             {
