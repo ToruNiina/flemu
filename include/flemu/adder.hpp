@@ -13,8 +13,6 @@ namespace flemu
 
 inline float32 add(const float32& x_, const float32& y_) noexcept
 {
-    // TODO: consider denormalized number
-
     // ------------------------------------------------------------------------
     // always make x <= y
     const auto [x, y] = [&]
@@ -109,7 +107,7 @@ inline float32 add(const float32& x_, const float32& y_) noexcept
     // ------------------------------------------------------------------------
     // align mantissa (always x.exp <= y.exp)
 
-    const auto [xman_aligned, yman_aligned] = [&]
+    const auto [xman_aligned, yman_aligned, xexp_norm, yexp_norm] = [&]
     {
         std::uint32_t xexp_norm = xexp;
         std::uint32_t yexp_norm = yexp;
@@ -134,7 +132,7 @@ inline float32 add(const float32& x_, const float32& y_) noexcept
 
         if(xexp_norm == yexp_norm)
         {
-            return std::make_tuple(xman_aligned, yman_aligned);
+            return std::make_tuple(xman_aligned, yman_aligned, xexp_norm, yexp_norm);
         }
         // exponent is different
         const std::uint32_t expdiff = std::uint32_t(yexp_norm) - std::uint32_t(xexp_norm);
@@ -164,7 +162,7 @@ inline float32 add(const float32& x_, const float32& y_) noexcept
             xman_aligned >>= expdiff;
             xman_aligned |= sticky;
         }
-        return std::make_tuple(xman_aligned, yman_aligned);
+        return std::make_tuple(xman_aligned, yman_aligned, xexp_norm, yexp_norm);
     }();
 
 //     std::cerr << "xman_aligned = " << as_bit(xman_aligned) << std::endl;
@@ -183,7 +181,7 @@ inline float32 add(const float32& x_, const float32& y_) noexcept
         //                                   +------- guard
 
         std::uint32_t sgn(ysgn);
-        std::uint32_t exp(yexp);
+        std::uint32_t exp(yexp_norm);
         if(xsgn != ysgn) // subtract. always abs(x) < abs(y), so the sign is y.
         {
             std::uint32_t res = yman_aligned - xman_aligned;
@@ -199,7 +197,7 @@ inline float32 add(const float32& x_, const float32& y_) noexcept
                 exp  -= 1;
                 res <<= 1;
 
-                // XXX consider the case when it becomes dernomalized number
+                // TODO FIXME consider the case when it becomes dernomalized number
             }
 
             // consider nearest-even rounding only
