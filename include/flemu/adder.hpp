@@ -171,168 +171,163 @@ inline float32 add(const float32& x_, const float32& y_) noexcept
     // ------------------------------------------------------------------------
     // add/sub mantissa and round
 
-    const auto [zsgn, zexp, zman] = [&]
+    //           26 25       22 ...  03 02 01 00
+    // y: | 0...| 1| z| z| z| z|... | z| 0| 0| 0|
+    // x: | 0...| 0| 0| 0| 1| z|... | z| z| z| z|
+    //             '-------------------' |  |  +- sticky
+    //                   mantissa        |  +---- round
+    //                                   +------- guard
+
+    std::uint32_t zsgn(ysgn);
+    std::uint32_t zexp(yexp_norm);
+    if(xsgn != ysgn) // subtract. always abs(x) < abs(y), so the sign is y.
     {
-        //           26 25       22 ...  03 02 01 00
-        // y: | 0...| 1| z| z| z| z|... | z| 0| 0| 0|
-        // x: | 0...| 0| 0| 0| 1| z|... | z| z| z| z|
-        //             '-------------------' |  |  +- sticky
-        //                   mantissa        |  +---- round
-        //                                   +------- guard
+        std::uint32_t zman = yman_aligned - xman_aligned;
 
-        std::uint32_t sgn(ysgn);
-        std::uint32_t exp(yexp_norm);
-        if(xsgn != ysgn) // subtract. always abs(x) < abs(y), so the sign is y.
+        if(zman == 0)
         {
-            std::uint32_t res = yman_aligned - xman_aligned;
+            // zero cannot be normalized
+            return float32(zsgn, 0u, 0u);
+        }
 
-            if(res == 0)
+        while(bit_at(zman, 26) == 0)
+        {
+            zexp  -= 1;
+            if(zexp == 0)
             {
-                // zero cannot be normalized
-                return std::make_tuple(sgn, 0u, 0u);
+                // since it becomes denormalized number, we don't need to
+                // normalize it.
+                break;
             }
+            zman <<= 1;
+        }
 
-            while(bit_at(res, 26) == 0)
+        if(zexp == 0)
+        {
+            // if it is 0.111...111, then it will be 1.00 after rounding and
+            // will become normalized.
+            if((zman & mask<std::uint32_t>(25, 2)) >> 2 == (1<<24)-1)
             {
-                exp  -= 1;
-                if(exp == 0)
+                return float32(zsgn, std::uint32_t(1), std::uint32_t(0));
+            }
+        }
+
+        // consider nearest-even rounding only
+        if(bit_at(zman, 2) == 1)
+        {
+            if(bit_at(zman, 1) == 0 && bit_at(zman, 0) == 0) // to even
+            {
+                if(bit_at(zman, 3) == 0)
                 {
-                    // since it becomes denormalized number, we don't need to
-                    // normalize it.
-                    break;
+                    // already even. do nothing.
                 }
-                res <<= 1;
-            }
-
-            if(exp == 0)
-            {
-                // if it is 0.111...111, then it will be 1.00 after rounding and
-                // will become normalized.
-                if((res & mask<std::uint32_t>(25, 2)) >> 2 == (1<<24)-1)
+                else // its odd.
                 {
-                    return std::make_tuple(sgn, std::uint32_t(1), std::uint32_t(0));
+                    zman += 0b1000;
                 }
             }
-
-            // consider nearest-even rounding only
-            if(bit_at(res, 2) == 1)
+            else // to nearest (upper)
             {
-                if(bit_at(res, 1) == 0 && bit_at(res, 0) == 0) // to even
+                zman += 0b1000;
+            }
+        }
+
+        // check carry-up by rounding (1.11111 -> 10.0000)
+        // 10.0000e+2 == 1.0000e+3
+        if(bit_at(zman, 27) == 1)
+        {
+            zexp  += 1;
+            zman >>= 1;
+        }
+        assert(bit_at(zman, 26) == 1 || zexp == 0); // normalized?
+
+        if(zexp == 0b1111'1111)
+        {
+            // it was not nan, so here it should be inf
+            zman = 0;
+        }
+        return float32(zsgn, zexp, std::uint32_t(bit_proxy(zman, 25, 3)));
+    }
+    else // add.
+    {
+        assert(bit_at(xman_aligned, 27) == 0);
+        assert(bit_at(yman_aligned, 27) == 0);
+        std::uint32_t zman = yman_aligned + xman_aligned;
+
+        // check carry-up by addition
+        if(bit_at(zman, 27) == 1)
+        {
+            // if we shift before checking round, the sticky bit will be lost.
+
+            if(bit_at(zman, 3) == 1) // need to round up.
+            {
+                if(bit_at(zman, 2) == 0 && bit_at(zman, 1) == 0 && bit_at(zman, 0) == 0) // to even
                 {
-                    if(bit_at(res, 3) == 0)
+                    if(bit_at(zman, 4) == 0)
                     {
                         // already even. do nothing.
                     }
-                    else // its odd.
+                    else
                     {
-                        res += 0b1000;
+                        zman += 0b1'0000;
                     }
                 }
                 else // to nearest (upper)
                 {
-                    res += 0b1000;
+                    zman += 0b1'0000;
                 }
             }
-
-            // check carry-up by rounding (1.11111 -> 10.0000)
-            // 10.0000e+2 == 1.0000e+3
-            if(bit_at(res, 27) == 1)
+            if(bit_at(zman, 28) == 1)
             {
-                exp  += 1;
-                res >>= 1;
+                zexp  += 2;
+                zman >>= 2;
             }
-            assert(bit_at(res, 26) == 1 || exp == 0); // normalized?
-
-            if(exp == 0b1111'1111)
+            else if(bit_at(zman, 27) == 1)
             {
-                // it was not nan, so here it should be inf
-                res = 0;
-            }
-            return std::make_tuple(sgn, exp, std::uint32_t(bit_proxy(res, 25, 3)));
-        }
-        else // add.
-        {
-            assert(bit_at(xman_aligned, 27) == 0);
-            assert(bit_at(yman_aligned, 27) == 0);
-            std::uint32_t res = yman_aligned + xman_aligned;
-
-            // check carry-up by addition
-            if(bit_at(res, 27) == 1)
-            {
-                // if we shift before checking round, the sticky bit will be lost.
-
-                if(bit_at(res, 3) == 1) // need to round up.
-                {
-                    if(bit_at(res, 2) == 0 && bit_at(res, 1) == 0 && bit_at(res, 0) == 0) // to even
-                    {
-                        if(bit_at(res, 4) == 0)
-                        {
-                            // already even. do nothing.
-                        }
-                        else
-                        {
-                            res += 0b1'0000;
-                        }
-                    }
-                    else // to nearest (upper)
-                    {
-                        res += 0b1'0000;
-                    }
-                }
-                if(bit_at(res, 28) == 1)
-                {
-                    exp  += 2;
-                    res >>= 2;
-                }
-                else if(bit_at(res, 27) == 1)
-                {
-                    exp  += 1;
-                    res >>= 1;
-                }
-                else
-                {
-                    assert(false);
-                }
+                zexp  += 1;
+                zman >>= 1;
             }
             else
             {
-                if(bit_at(res, 2) == 1) // need to round up.
-                {
-                    if(bit_at(res, 1) == 0 && bit_at(res, 0) == 0) // to even
-                    {
-                        if(bit_at(res, 3) == 0)
-                        {
-                            // already even. do nothing.
-                        }
-                        else
-                        {
-                            res += 0b1000;
-                        }
-                    }
-                    else // to nearest (upper)
-                    {
-                        res += 0b1000;
-                    }
-                }
-                // check carry-up by rounding.
-                if(bit_at(res, 27) == 1)
-                {
-                    exp  += 1;
-                    res >>= 1;
-                }
+                assert(false);
             }
-            assert(bit_at(res, 26) == 1); // normalized?
-
-            if(exp == 0b1111'1111)
-            {
-                // it was not nan, so here it should be inf
-                res = 0;
-            }
-            return std::make_tuple(sgn, exp, std::uint32_t(bit_proxy(res, 25, 3)));
         }
-    }();
+        else
+        {
+            if(bit_at(zman, 2) == 1) // need to round up.
+            {
+                if(bit_at(zman, 1) == 0 && bit_at(zman, 0) == 0) // to even
+                {
+                    if(bit_at(zman, 3) == 0)
+                    {
+                        // already even. do nothing.
+                    }
+                    else
+                    {
+                        zman += 0b1000;
+                    }
+                }
+                else // to nearest (upper)
+                {
+                    zman += 0b1000;
+                }
+            }
+            // check carry-up by rounding.
+            if(bit_at(zman, 27) == 1)
+            {
+                zexp  += 1;
+                zman >>= 1;
+            }
+        }
+        assert(bit_at(zman, 26) == 1); // normalized?
 
-    return float32(zsgn, zexp, zman);
+        if(zexp == 0b1111'1111)
+        {
+            // it was not nan, so here it should be inf
+            zman = 0;
+        }
+        return float32(zsgn, zexp, std::uint32_t(bit_proxy(zman, 25, 3)));
+    }
 }
 
 #ifdef FLEMU_ACTIVATE_UNIT_TESTS
