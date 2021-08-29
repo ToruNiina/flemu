@@ -5,6 +5,7 @@
 
 #include <boost/ut.hpp>
 
+#include <random>
 #include <tuple>
 
 namespace flemu
@@ -97,7 +98,7 @@ inline float32 add(const float32& x_, const float32& y_) noexcept
         {
             return y;
         }
-        else
+        else // yzero
         {
             return x;
         }
@@ -140,7 +141,7 @@ inline float32 add(const float32& x_, const float32& y_) noexcept
             std::uint32_t sticky = 0;
             if(expdiff > 3)
             {
-                const auto sticky_region = mask<std::uint32_t>(expdiff - 2, 0);
+                const auto sticky_region = xman_aligned & mask<std::uint32_t>(expdiff - 1, 0);
                 sticky = (sticky_region == 0) ? 0 : 1;
             }
             xman_aligned >>= expdiff;
@@ -148,6 +149,9 @@ inline float32 add(const float32& x_, const float32& y_) noexcept
         }
         return std::make_tuple(xman_aligned, yman_aligned);
     }();
+
+//     std::cerr << "xman_aligned = " << as_bit(xman_aligned) << std::endl;
+//     std::cerr << "yman_aligned = " << as_bit(yman_aligned) << std::endl;
 
     // ------------------------------------------------------------------------
     // add/sub mantissa and round
@@ -167,7 +171,13 @@ inline float32 add(const float32& x_, const float32& y_) noexcept
         {
             std::uint32_t res = yman_aligned - xman_aligned;
 
-            if(bit_at(res, 26) == 0)
+            if(res == 0)
+            {
+                // zero cannot be normalized
+                return std::make_tuple(sgn, 0u, 0u);
+            }
+
+            while(bit_at(res, 26) == 0)
             {
                 exp  -= 1;
                 res <<= 1;
@@ -200,44 +210,89 @@ inline float32 add(const float32& x_, const float32& y_) noexcept
             }
             assert(bit_at(res, 26) == 1); // normalized?
 
+            if(exp == 0b1111'1111)
+            {
+                // it was not nan, so here it should be inf
+                res = 0;
+            }
             return std::make_tuple(sgn, exp, std::uint32_t(bit_proxy(res, 25, 3)));
         }
         else // add.
         {
+            assert(bit_at(xman_aligned, 27) == 0);
+            assert(bit_at(yman_aligned, 27) == 0);
             std::uint32_t res = yman_aligned + xman_aligned;
+
             // check carry-up by addition
             if(bit_at(res, 27) == 1)
             {
-                exp  += 1;
-                res >>= 1;
-            }
-            if(bit_at(res, 2) == 1) // need to round up.
-            {
-                if(bit_at(res, 1) == 0 && bit_at(res, 0) == 0) // to even
+                if(bit_at(res, 3) == 1) // need to round up.
                 {
-                    if(bit_at(res, 3) == 0)
+                    if(bit_at(res, 2) == 0 && bit_at(res, 1) == 0 && bit_at(res, 0) == 0) // to even
                     {
-                        // already even. do nothing.
+                        if(bit_at(res, 4) == 0)
+                        {
+                            // already even. do nothing.
+                        }
+                        else
+                        {
+                            res += 0b1'0000;
+                        }
                     }
-                    else
+                    else // to nearest (upper)
+                    {
+                        res += 0b1'0000;
+                    }
+                }
+                if(bit_at(res, 28) == 1)
+                {
+                    exp  += 2;
+                    res >>= 2;
+                }
+                else if(bit_at(res, 27) == 1)
+                {
+                    exp  += 1;
+                    res >>= 1;
+                }
+                else
+                {
+                    assert(false);
+                }
+            }
+            else
+            {
+                if(bit_at(res, 2) == 1) // need to round up.
+                {
+                    if(bit_at(res, 1) == 0 && bit_at(res, 0) == 0) // to even
+                    {
+                        if(bit_at(res, 3) == 0)
+                        {
+                            // already even. do nothing.
+                        }
+                        else
+                        {
+                            res += 0b1000;
+                        }
+                    }
+                    else // to nearest (upper)
                     {
                         res += 0b1000;
                     }
                 }
-                else // to nearest (upper)
+                // check carry-up by rounding.
+                if(bit_at(res, 27) == 1)
                 {
-                    res += 0b1000;
+                    exp  += 1;
+                    res >>= 1;
                 }
-            }
-
-            // check carry-up by rounding.
-            if(bit_at(res, 27) == 1)
-            {
-                exp  += 1;
-                res >>= 1;
             }
             assert(bit_at(res, 26) == 1); // normalized?
 
+            if(exp == 0b1111'1111)
+            {
+                // it was not nan, so here it should be inf
+                res = 0;
+            }
             return std::make_tuple(sgn, exp, std::uint32_t(bit_proxy(res, 25, 3)));
         }
     }();
@@ -281,6 +336,54 @@ inline boost::ut::suite tests_adder = []
 //         std::cout << to_float(x3) << " + " << to_float(y3) << " = " << to_float(z3) << " != 1.0e+30f"<< std::endl;
 //         std::cout << z3.sign() << "|" << z3.exponent() << "|" << z3.mantissa() << std::endl;
 //         std::cout << "========================================================================" << std::endl;
+
+        std::mt19937 rng(123456789);
+
+        std::uniform_int_distribution<std::uint32_t> sgn(0,   1);
+        std::uniform_int_distribution<std::uint32_t> exp(1, 255); // not including denormalized
+        std::uniform_int_distribution<std::uint32_t> man(0, 0x007F'FFFF);
+
+        const std::size_t N = 10000;
+        for(std::size_t i=0; i<N; ++i)
+        {
+//             const std::uint32_t xi = (sgn(rng) << 31) + (exp(rng) << 23) + man(rng);
+//             const std::uint32_t yi = (sgn(rng) << 31) + (exp(rng) << 23) + man(rng);
+            const std::uint32_t xi = (1 << 31) + (exp(rng) << 23) + man(rng);
+            const std::uint32_t yi = (1 << 31) + (exp(rng) << 23) + man(rng);
+//             const std::uint32_t xi = 0b1101'1100'0000'1001'0010'1110'0100'0000;
+//             const std::uint32_t yi = 0b1101'1010'0011'0100'0101'1100'0010'1001;
+//             const std::uint32_t xi = 0b1100'1101'1111'1110'1111'1100'1100'1101;
+//             const std::uint32_t yi = 0b1100'1011'0010'1101'1011'0101'0000'0100;
+
+            boost::ut::log << "----------------------------------------------";
+            boost::ut::log << "     sxxx'xxxx'xmmm'mmmm'mmmm'mmmm'mmmm'mmmm";
+            boost::ut::log << "xr =" << as_bit(xi);
+            boost::ut::log << "yr =" << as_bit(yi);
+
+            const float xr = bit_cast<float>(xi);
+            const float yr = bit_cast<float>(yi);
+            const float zr = xr + yr;
+
+            boost::ut::log << "zr =" << as_bit(bit_cast<std::uint32_t>(zr));
+
+            const auto x = to_flemu(xr);
+            const auto y = to_flemu(yr);
+            const auto z = add(x, y);
+
+            boost::ut::log << "z  =" << as_bit(z.base());
+
+            if(z.is_nan())
+            {
+                boost::ut::expect(std::isnan(zr))
+                    << "z = " << as_bit(z.base()) << " is NaN but "
+                    << "zr = " << as_bit(bit_cast<std::uint32_t>(zr)) << " is not nan";
+            }
+            else
+            {
+                boost::ut::expect(to_float(z) == zr)
+                    << as_bit(z.base()) << " != " << as_bit(bit_cast<std::uint32_t>(zr));
+            }
+        }
     };
 };
 #endif
