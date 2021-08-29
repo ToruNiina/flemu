@@ -61,36 +61,15 @@ struct basic_float32
 };
 using float32 = basic_float32<8, 23, 127>;
 
-// inline constexpr float to_float(const float32 x) noexcept
-// {
-//     return std::bit_cast<float>(x.base());
-// }
-//
-// inline constexpr float32 to_flemu(const float x) noexcept
-// {
-//     return float32(std::bit_cast<std::uint32_t>(x));
-// }
-
 inline float to_float(const float32 x) noexcept
 {
-    const auto src = x.base();
-    float dst;
-    std::memcpy(reinterpret_cast<char*>(&dst),
-                reinterpret_cast<const char*>(std::addressof(src)),
-                sizeof(float));
-    return dst;
+    return bit_cast<float>(x.base());
 }
 
-inline float32 to_flemu(const float src) noexcept
+inline float32 to_flemu(const float x) noexcept
 {
-    std::uint32_t dst;
-    std::memcpy(reinterpret_cast<char*>(&dst),
-                reinterpret_cast<const char*>(&src),
-                sizeof(float));
-    return float32(dst);
+    return float32(bit_cast<std::uint32_t>(x));
 }
-
-
 
 #ifdef FLEMU_ACTIVATE_UNIT_TESTS
 inline boost::ut::suite tests_basic_float32 = []
