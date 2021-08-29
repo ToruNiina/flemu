@@ -59,6 +59,8 @@ inline float32 add(const float32& x_, const float32& y_) noexcept
     const auto ynan  = (yexp == 0b1111'1111) && (yman != 0);
     const auto xzero = (xexp == 0) && (xman == 0);
     const auto yzero = (yexp == 0) && (yman == 0);
+    const auto xdenorm = (xexp == 0) && (xman != 0);
+    const auto ydenorm = (yexp == 0) && (yman != 0);
 
     if(xnan || ynan) // z + nan == nan,  nan + z == nan
     {
@@ -109,26 +111,41 @@ inline float32 add(const float32& x_, const float32& y_) noexcept
 
     const auto [xman_aligned, yman_aligned] = [&]
     {
-        std::uint32_t xman_aligned = (1 << 23); // add implicit 1
+        std::uint32_t xexp_norm = xexp;
+        std::uint32_t yexp_norm = yexp;
+        std::uint32_t xman_aligned = (1 << 23);
         std::uint32_t yman_aligned = (1 << 23);
+
+        if(xdenorm)
+        {
+            xman_aligned = 0; // remove implicit 1
+            xexp_norm   += 1;
+        }
+        if(ydenorm)
+        {
+            yman_aligned = 0;
+            yexp_norm   += 1;
+        }
+
         xman_aligned += std::uint32_t(xman);
         yman_aligned += std::uint32_t(yman);
         xman_aligned <<= 3;
         yman_aligned <<= 3;
 
-        if(xexp == yexp)
+        if(xexp_norm == yexp_norm)
         {
             return std::make_tuple(xman_aligned, yman_aligned);
         }
         // exponent is different
-        const std::uint32_t expdiff = std::uint32_t(yexp) - std::uint32_t(xexp);
+        const std::uint32_t expdiff = std::uint32_t(yexp_norm) - std::uint32_t(xexp_norm);
 
         //         mantissa      additional bits
         //    .---------------. .---.
         // y:| 1.xxxxxxxxxxxxxx|0|0|0|
-        // x:     | 1.xxxxxxxxx|x|x|x|x|x| >> expdiff == 5
-        //                      | | '----'
-        //                      | |  sticky region == 3 bit
+        // x:     | 1.xxxxxxxxx|x|x|x|x|x|0|0|0| >> expdiff == e.g. 5
+        //                      | | | '-------'
+        //                      | | |  sticky region
+        //                      | | + sticky bit
         //                      | + round bit
         //                      + guard bit
 
@@ -158,7 +175,7 @@ inline float32 add(const float32& x_, const float32& y_) noexcept
 
     const auto [zsgn, zexp, zman] = [&]
     {
-        //              25       22 ...  03 02 01 00
+        //           26 25       22 ...  03 02 01 00
         // y: | 0...| 1| z| z| z| z|... | z| 0| 0| 0|
         // x: | 0...| 0| 0| 0| 1| z|... | z| z| z| z|
         //             '-------------------' |  |  +- sticky
@@ -167,7 +184,7 @@ inline float32 add(const float32& x_, const float32& y_) noexcept
 
         std::uint32_t sgn(ysgn);
         std::uint32_t exp(yexp);
-        if(xsgn != ysgn) // subtract. always x < y, so the sign is y.
+        if(xsgn != ysgn) // subtract. always abs(x) < abs(y), so the sign is y.
         {
             std::uint32_t res = yman_aligned - xman_aligned;
 
@@ -181,7 +198,10 @@ inline float32 add(const float32& x_, const float32& y_) noexcept
             {
                 exp  -= 1;
                 res <<= 1;
+
+                // XXX consider the case when it becomes dernomalized number
             }
+
             // consider nearest-even rounding only
             if(bit_at(res, 2) == 1)
             {
@@ -226,6 +246,8 @@ inline float32 add(const float32& x_, const float32& y_) noexcept
             // check carry-up by addition
             if(bit_at(res, 27) == 1)
             {
+                // if we shift before checking round, the sticky bit will be lost.
+
                 if(bit_at(res, 3) == 1) // need to round up.
                 {
                     if(bit_at(res, 2) == 0 && bit_at(res, 1) == 0 && bit_at(res, 0) == 0) // to even
@@ -340,7 +362,7 @@ inline boost::ut::suite tests_adder = []
         std::mt19937 rng(123456789);
 
         std::uniform_int_distribution<std::uint32_t> sgn(0,   1);
-        std::uniform_int_distribution<std::uint32_t> exp(1, 255); // not including denormalized
+        std::uniform_int_distribution<std::uint32_t> exp(0, 255); // not including denormalized
         std::uniform_int_distribution<std::uint32_t> man(0, 0x007F'FFFF);
 
         const std::size_t N = 10000;
